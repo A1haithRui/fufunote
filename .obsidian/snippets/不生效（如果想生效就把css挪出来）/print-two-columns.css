@@ -1,0 +1,25 @@
+
+@media print {
+    @page {
+        size: A4 landscape;
+        margin: 10mm;
+    }
+
+    /* 强制正文分两列 */
+    .markdown-rendered {
+        column-count: 2;
+        column-gap: 1.5cm; /* 两栏间距 */
+        column-rule: 1px solid #eee; /* 中间分割线 */
+    }
+
+    /* 确保代码块、图片等不会被横向劈开 */
+    pre, blockquote, img, .callout, .MathJax {
+        break-inside: avoid;
+    }
+
+    /* 标题微调 */
+    h1, h2, h3 {
+        break-after: avoid;
+        color: #2e67d2; /* 打印出来的标题带点蓝色，方便区分 */
+    }
+} 

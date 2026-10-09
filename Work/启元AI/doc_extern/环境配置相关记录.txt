@@ -1,0 +1,118 @@
+这套环境捣鼓了很长时间，最终才勉强能跑通，这里做一些记录
+
+InfiniLM服务端的启动环境用的是python3.14，虚拟环境在该目录下的.venv里，直接 `source .venv/bin/activate` 即可激活
+
+vllm做压测时的指令依赖python3.12，这里用conda创建了虚拟环境，保存在`autodl-tmp/vllm-bench312-conda`里，可以用 `conda activate /root/autodl-tmp/vllm-bench312-conda/` 激活
+
+至于/autodl-tmp/miniconda3的存在，这个是一个意外但又必须保留的东西，之前磁盘爆的时候，手贱把容器里的/miniconda3给删了，只能及时止损下载一个conda放在数据盘里，所以/miniconda3应该是系统保留的，不过现在就没用这个默认的了，一切都用数据盘的miniconda3。
+
+启动服务指令：
+python python/infinilm/server/inference_server.py \
+  --device nvidia \
+  --model=/root/autodl-tmp/models/Llama-3.1-8B-Instruct \
+  --port 8102 \
+  --tp 1 \
+  --max-batch-size 64 \
+  --max-new-tokens 4096 \
+  --num-blocks 64 \
+  --max-batch-size 4 \
+  --enable-graph \
+  --enable-paged-attn \
+  --attn flash-attn \
+  --ignore-eos
+
+baseline的压测指令：
+vllm bench serve \
+  --model /root/autodl-tmp/models/Llama-3.1-8B-Instruct \
+  --port 8102 \
+  --backend openai-chat \
+  --tokenizer /root/autodl-tmp/models/Llama-3.1-8B-Instruct \
+  --endpoint /v1/chat/completions \
+  --request-rate inf \
+  --num-prompts 100 \
+  --max-concurrency 4 \
+  --random-input-len 256 \
+  --random-output-len 256 \
+  --ignore-eos \
+  --save-result \
+  --result-dir /root/autodl-tmp/bench-results
+
+循环测试指令为：
+#!/bin/bash
+set -u
+model_path="/root/autodl-tmp/models/Llama-3.1-8B-Instruct"
+result_dir="/root/autodl-tmp/bench-results-official-8b"
+port=8102
+mkdir -p "$result_dir"
+batch_size_list=(1 4 16 64)
+random_output_len_list=(256 1024 4096)
+
+for batch_size in "${batch_size_list[@]}"; do
+  if [[ "$batch_size" == "1" || "$batch_size" == "4" ]]; then
+    random_input_len_list=(32 256 4096)
+  else
+    random_input_len_list=(32 256)
+  fi
+
+  for random_input_len in "${random_input_len_list[@]}"; do
+    for random_output_len in "${random_output_len_list[@]}"; do
+      sleep 1
+      seed=$(date +%s)
+
+      # baseline 建议请求数至少覆盖若干轮并发；长输出会很慢，可先用 batch_size*10
+      num_prompts=$((batch_size * 10))
+      if [[ "$num_prompts" -lt 20 ]]; then
+        num_prompts=20
+      fi
+
+      log_file="${result_dir}/bench_8b_con=${batch_size}_in=${random_input_len}_out=${random_output_len}_seed=${seed}.log"
+
+      echo "==================================================" | tee -a "$log_file"
+      echo "Running official 8B baseline" | tee -a "$log_file"
+      echo "batch_size/max_concurrency=${batch_size}" | tee -a "$log_file"
+      echo "input_len=${random_input_len}" | tee -a "$log_file"
+      echo "output_len=${random_output_len}" | tee -a "$log_file"
+      echo "num_prompts=${num_prompts}" | tee -a "$log_file"
+      echo "seed=${seed}" | tee -a "$log_file"
+      echo "model_path=${model_path}" | tee -a "$log_file"
+      echo "result_dir=${result_dir}" | tee -a "$log_file"
+      echo "==================================================" | tee -a "$log_file"
+
+      vllm bench serve \
+        --model "$model_path" \
+        --port "$port" \
+        --backend openai-chat \
+        --tokenizer "$model_path" \
+        --endpoint /v1/chat/completions \
+        --request-rate inf \
+        --num-prompts "$num_prompts" \
+        --max-concurrency "$batch_size" \
+        --random-input-len "$random_input_len" \
+        --random-output-len "$random_output_len" \
+        --ignore-eos \
+        --save-result \
+        --result-dir "$result_dir" \
+        --seed "$seed" >> "$log_file" 2>&1
+
+      echo "Finished: con=${batch_size}, in=${random_input_len}, out=${random_output_len}" | tee -a "$log_file"
+    done
+  done
+done
+
+2026-07-11 Codex operation notes:
+- Fixed /tmp permission from 755 to 1777 so apt can create temporary files.
+- Installed tmux via apt after /tmp permission fix. No Python/conda/pip/model dependency was changed.
+- Do not bypass environment activation by calling .venv/bin/python directly; use: cd /root/InfiniLM && source .venv/bin/activate && python ...
+- Server tmux session: infini_server. Bench tmux session: infini_bench.
+- Current server baseline command uses one max-batch-size only: --max-batch-size 64, with --num-blocks 64.
+
+2026-07-12 restart recovery note:
+- After a remote/container restart, a non-interactive SSH shell does not execute the dynamic-library exports at the end of /root/.bashrc.
+- Before starting the 3.14 server in tmux, export this exact library path in that tmux command:
+  LD_LIBRARY_PATH=/root/InfiniLM/.venv/lib/python3.14/site-packages/nvidia/nccl/lib:/root/InfiniLM/.venv/lib/python3.14/site-packages/torch/lib:/root/InfiniCore/python/infinicore/lib:/root/autodl-tmp/miniconda3/lib:/usr/local/cuda/lib64
+- Then activate /root/InfiniLM/.venv normally. This restores imports of libpython3.14.so.1.0 and libinfinicore_cpp_api.so without installing or changing dependencies.
+- For every benchmark command sent to tmux, explicitly run:
+  source /root/autodl-tmp/miniconda3/etc/profile.d/conda.sh && conda activate /root/autodl-tmp/vllm-bench312-conda/
+  Do not assume the tmux shell remains in the vLLM environment after a restart.
+
+

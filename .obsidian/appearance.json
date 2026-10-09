@@ -1,0 +1,11 @@
+{
+  "theme": "moonstone",
+  "cssTheme": "Phycat",
+  "baseFontSizeAction": true,
+  "baseFontSize": 19,
+  "interfaceFontFamily": "Comic Sans MS",
+  "textFontFamily": "霞鹜文楷",
+  "monospaceFontFamily": "Comic Sans MS",
+  "accentColor": "",
+  "enabledCssSnippets": []
+}

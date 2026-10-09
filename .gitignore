@@ -1,0 +1,29 @@
+# ─────────────────────────────────────────────────────────────
+# fufunote · 版本库排除规则
+#
+# 背景：本仓库用 Remotely Save 同步到 OneDrive，其设置 syncConfigDir = false，
+#       所以 .obsidian 不参与 OneDrive 同步；Git 只做本机的逐行历史与异地备份。
+# ─────────────────────────────────────────────────────────────
+
+# 私人日记：绝不进版本库（git 历史永久，删除也无法抹除）
+ZPrivateDiary/
+
+# 同步工具、agent 运行状态、回收站
+.trash/
+.claudian/
+.claude/
+.agents/
+.acl-recovery-*/
+
+# 插件目录整个排除。
+# 原因：.obsidian/plugins/remotely-save/data.json 存着 OneDrive 凭据，
+#       而它的“混淆”只是反转 + base64，两行代码即可还原，等同明文。
+#       插件本体也可由各设备自行安装。
+.obsidian/plugins/
+
+# 主题：约 3 MB，可重新下载
+.obsidian/themes/
+
+# 界面状态：改动极其频繁，且无版本价值
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
