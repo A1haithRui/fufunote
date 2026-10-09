@@ -27,3 +27,6 @@ ZPrivateDiary/
 # 界面状态：改动极其频繁，且无版本价值
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
+
+# 本机专用的自动化工具（周更推送脚本与日志）
+.tools/
